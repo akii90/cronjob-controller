@@ -58,5 +58,7 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 func (r *CronJobReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&batchv1.CronJob{}).
+		// Name of current controller
+		Named("cronjob").
 		Complete(r)
 }
