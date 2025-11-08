@@ -93,9 +93,8 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			if (c.Type == kbatch.JobComplete || c.Type == kbatch.JobFailed) && c.Status == corev1.ConditionTrue {
 				return true, c.Type
 			}
-
-			return false, ""
 		}
+		return false, ""
 	}
 
 	getScheduledTimeForJob := func(job *kbatch.Job) (*time.Time, error) {
@@ -269,7 +268,7 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if cronJob.Spec.ConcurrencyPolicy == batchv1.ReplaceConcurrent {
-		for _, activeJob := activeJobs {
+		for _, activeJob := range activeJobs {
 			if err := r.Delete(ctx, activeJob, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
 				log.Error(err, "unable to delete active job", "job", activeJob)
 				return ctrl.Result{}, err
@@ -282,10 +281,10 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		job := &kbatch.Job{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: make(map[string]string),
+				Labels:      make(map[string]string),
 				Annotations: make(map[string]string),
-				Name: name,
-				Namespace: cronJob.Namespace,
+				Name:        name,
+				Namespace:   cronJob.Namespace,
 			},
 			Spec: *cronJob.Spec.JobTemplate.Spec.DeepCopy(),
 		}
@@ -293,8 +292,8 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		for k, v := range cronJob.Spec.JobTemplate.Annotations {
 			job.Annotations[k] = v
 		}
-		job.Annotations[scheduledTimeAnnotation] = scheduledTime.Format(time.time.RFC3339)
-		for k,v := range cronJob.Spec.JobTemplate.Labels {
+		job.Annotations[scheduledTimeAnnotation] = scheduledTime.Format(time.RFC3339)
+		for k, v := range cronJob.Spec.JobTemplate.Labels {
 			job.Labels[k] = v
 		}
 		if err := ctrl.SetControllerReference(cronJob, job, r.Scheme); err != nil {
