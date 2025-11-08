@@ -317,7 +317,8 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	log.V(1).Info("create Job for CronJob run", "job", job)
 
-	return ctrl.Result{}, nil
+	// we'll requeue once we see the running job, and update our status
+	return scheduledResult, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
