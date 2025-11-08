@@ -246,6 +246,78 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	scheduledResult := ctrl.Result{RequeueAfter: nextRun.Sub(r.Now())}
 	log = log.WithValues("now", r.Now(), "next run", nextRun)
 
+	if missedRun.IsZero() {
+		log.V(1).Info("no upcoming scheduled times, sleeping until next")
+		return scheduledResult, nil
+	}
+
+	// run last missed, before deadline
+	log.WithValues("current run", missedRun)
+	tooLate := false
+	if cronJob.Spec.StartingDeadlineSeconds != nil {
+		tooLate = missedRun.Add(time.Duration(*cronJob.Spec.StartingDeadlineSeconds) * time.Second).Before(r.Now())
+	}
+	if tooLate {
+		log.V(1).Info("missed starting deadline for last run, sleeping until next")
+		return scheduledResult, nil
+	}
+
+	// run, observe concurrency policy
+	if cronJob.Spec.ConcurrencyPolicy == batchv1.ForbidConcurrent && len(activeJobs) > 0 {
+		log.V(1).Info("concurrency policy blocs concurrent runs, skipping", "num active", len(activeJobs))
+		return scheduledResult, nil
+	}
+
+	if cronJob.Spec.ConcurrencyPolicy == batchv1.ReplaceConcurrent {
+		for _, activeJob := activeJobs {
+			if err := r.Delete(ctx, activeJob, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
+				log.Error(err, "unable to delete active job", "job", activeJob)
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
+	constructJobForCronJob := func(cronJob *batchv1.CronJob, scheduledTime time.Time) (*kbatch.Job, error) {
+		name := fmt.Sprintf("%s-%d", cronJob.Name, scheduledTime.Unix())
+
+		job := &kbatch.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: make(map[string]string),
+				Annotations: make(map[string]string),
+				Name: name,
+				Namespace: cronJob.Namespace,
+			},
+			Spec: *cronJob.Spec.JobTemplate.Spec.DeepCopy(),
+		}
+
+		for k, v := range cronJob.Spec.JobTemplate.Annotations {
+			job.Annotations[k] = v
+		}
+		job.Annotations[scheduledTimeAnnotation] = scheduledTime.Format(time.time.RFC3339)
+		for k,v := range cronJob.Spec.JobTemplate.Labels {
+			job.Labels[k] = v
+		}
+		if err := ctrl.SetControllerReference(cronJob, job, r.Scheme); err != nil {
+			return nil, err
+		}
+
+		return job, nil
+	}
+
+	job, err := constructJobForCronJob(cronJob, missedRun)
+	if err != nil {
+		log.Error(err, "unable to construct job from template")
+		// don't bother requeuing until we get a change to the spec
+		return scheduledResult, nil
+	}
+
+	if err := r.Create(ctx, job); err != nil {
+		log.Error(err, "unable to create Job for CronJob", "job", job)
+		return ctrl.Result{}, err
+	}
+
+	log.V(1).Info("create Job for CronJob run", "job", job)
+
 	return ctrl.Result{}, nil
 }
 
