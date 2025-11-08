@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"github.com/robfig/cron"
 	kbatch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -198,6 +200,51 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		log.V(1).Info("cronjob suspended, skipping")
 		return ctrl.Result{}, nil
 	}
+
+	// range: earliestTime， lastMissed, now, next
+	getNextSchedule := func(cronJob *batchv1.CronJob, now time.Time) (lastMissed time.Time, next time.Time, err error) {
+		sched, err := cron.Parse(cronJob.Spec.Schedule)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("unparseable schedule %q: %w", cronJob.Spec.Schedule, err)
+		}
+
+		var earliestTime time.Time
+		if cronJob.Status.LastScheduleTime != nil {
+			earliestTime = cronJob.Status.LastScheduleTime.Time
+		} else {
+			earliestTime = cronJob.CreationTimestamp.Time
+		}
+		if cronJob.Spec.StartingDeadlineSeconds != nil {
+			schedulingDeadline := now.Add(-time.Second * time.Duration(*cronJob.Spec.StartingDeadlineSeconds))
+			if schedulingDeadline.After(earliestTime) {
+				earliestTime = schedulingDeadline
+			}
+		}
+
+		// search lastMissed during earliestTime and now
+		if earliestTime.After(now) {
+			return time.Time{}, sched.Next(now), nil
+		}
+
+		starts := 0
+		for t := sched.Next(earliestTime); !t.After(now); t = sched.Next(t) {
+			lastMissed = t
+			starts++
+			if starts > 100 {
+				return time.Time{}, time.Time{}, fmt.Errorf("too many missed start times (> 100). Set or decrease .spec.startingDeadlineSeconds or check clock skew") //nolint:staticcheck
+			}
+		}
+		return lastMissed, sched.Next(now), nil
+	}
+
+	missedRun, nextRun, err := getNextSchedule(cronJob, r.Now())
+	if err != nil {
+		log.Error(err, "unable to figure out CronJob schedule")
+		return ctrl.Result{}, err
+	}
+
+	scheduledResult := ctrl.Result{RequeueAfter: nextRun.Sub(r.Now())}
+	log = log.WithValues("now", r.Now(), "next run", nextRun)
 
 	return ctrl.Result{}, nil
 }
