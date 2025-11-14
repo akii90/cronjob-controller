@@ -20,11 +20,11 @@ import (
 	"context"
 	"fmt"
 
-    "github.com/robfig/cron"
-    apierrors "k8s.io/apimachinery/pkg/api/errors"
-    "k8s.io/apimachinery/pkg/runtime/schema"
-    validationutils "k8s.io/apimachinery/pkg/util/validation"
-    "k8s.io/apimachinery/pkg/util/validation/field"
+	"github.com/robfig/cron"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	validationutils "k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -44,10 +44,10 @@ func SetupCronJobWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&batchv1.CronJob{}).
 		WithValidator(&CronJobCustomValidator{}).
 		WithDefaulter(&CronJobCustomDefaulter{
-			DefaultConcurrencyPolicy:		  batchv1.AllowConcurrent,
-			DefaultSuspend:					  false,
+			DefaultConcurrencyPolicy:          batchv1.AllowConcurrent,
+			DefaultSuspend:                    false,
 			DefaultSuccessfulJobsHistoryLimit: 3,
-			DefaultFailedJobsHistoryLimit:	  1,
+			DefaultFailedJobsHistoryLimit:     1,
 		}).
 		Complete()
 }
@@ -61,10 +61,10 @@ func SetupCronJobWebhookWithManager(mgr ctrl.Manager) error {
 // as it is used only for temporary operations and does not need to be deeply copied.
 type CronJobCustomDefaulter struct {
 	// Default values for various CronJob fields
-	DefaultConcurrencyPolicy		  batchv1.ConcurrencyPolicy
-	DefaultSuspend					  bool
+	DefaultConcurrencyPolicy          batchv1.ConcurrencyPolicy
+	DefaultSuspend                    bool
 	DefaultSuccessfulJobsHistoryLimit int32
-	DefaultFailedJobsHistoryLimit	  int32
+	DefaultFailedJobsHistoryLimit     int32
 }
 
 var _ webhook.CustomDefaulter = &CronJobCustomDefaulter{}
@@ -84,7 +84,7 @@ func (d *CronJobCustomDefaulter) Default(_ context.Context, obj runtime.Object) 
 	return nil
 }
 
-func (d * CronJobCustomDefaulter) applyDefaults (cronJob * batchv1.CronJob)  {
+func (d *CronJobCustomDefaulter) applyDefaults(cronJob *batchv1.CronJob) {
 	if cronJob.Spec.ConcurrencyPolicy == "" {
 		cronJob.Spec.ConcurrencyPolicy = d.DefaultConcurrencyPolicy
 	}
@@ -169,7 +169,7 @@ func validateCronJob(cronJob *batchv1.CronJob) error {
 }
 
 func validateCronJobSpec(cronJob *batchv1.CronJob) *field.Error {
-	return	validateScheduleFormat(cronJob.Spec.Schedule, field.NewPath("spec").Child("schedule"))
+	return validateScheduleFormat(cronJob.Spec.Schedule, field.NewPath("spec").Child("schedule"))
 }
 
 func validateScheduleFormat(schedule string, fldPath *field.Path) *field.Error {
