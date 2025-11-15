@@ -19,12 +19,15 @@ package controller
 import (
 	"context"
 	"fmt"
-	"github.com/robfig/cron"
+	"github.com/robfig/cron/v3"
 	kbatch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 	ref "k8s.io/client-go/tools/reference"
+	"k8s.io/utils/ptr"
 	"sort"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,6 +43,7 @@ type CronJobReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Clock
+	Recorder record.EventRecorder
 }
 
 type Clock interface {
@@ -195,14 +199,39 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	if cronJob.Spec.TimeZone != nil {
+		timeZone := ptr.Deref(cronJob.Spec.TimeZone, "")
+		if _, err := time.LoadLocation(timeZone); err != nil {
+			log.V(4).Info("Not starting job because timeZone is invalid", "cronjob", cronJob, "timeZone", timeZone, "err", err)
+			r.Recorder.Eventf(cronJob, corev1.EventTypeWarning, "UnknownTimeZone", "invalid timeZone: %q, %s", timeZone, err)
+			return ctrl.Result{}, nil
+		}
+	}
+
 	if cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
 		log.V(1).Info("cronjob suspended, skipping")
 		return ctrl.Result{}, nil
 	}
 
+	formatSchedule := func(cronJob *batchv1.CronJob, recorder record.EventRecorder) string {
+		if strings.Contains(cronJob.Spec.Schedule, "TZ") {
+			if recorder != nil {
+				recorder.Eventf(cronJob, corev1.EventTypeWarning, "UnsupportedSchedule", "CRON_TZ or TZ used in Schedule %q is not officially supported, see https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/ for more details", cronJob.Spec.Schedule)
+			}
+
+			return cronJob.Spec.Schedule
+		}
+
+		if cronJob.Spec.TimeZone != nil {
+			return fmt.Sprintf("TZ=%s %s", *cronJob.Spec.TimeZone, cronJob.Spec.Schedule)
+		}
+
+		return cronJob.Spec.Schedule
+	}
+
 	// range: earliestTime， lastMissed, now, next
 	getNextSchedule := func(cronJob *batchv1.CronJob, now time.Time) (lastMissed time.Time, next time.Time, err error) {
-		sched, err := cron.Parse(cronJob.Spec.Schedule)
+		sched, err := cron.ParseStandard(formatSchedule(cronJob, r.Recorder))
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("unparseable schedule %q: %w", cronJob.Spec.Schedule, err)
 		}

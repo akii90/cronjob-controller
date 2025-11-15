@@ -3952,6 +3952,8 @@ spec:
                 type: integer
               suspend:
                 type: boolean
+              timeZone:
+                type: string
             required:
             - jobTemplate
             - schedule

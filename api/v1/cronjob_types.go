@@ -53,6 +53,18 @@ type CronJobSpec struct {
 	// +required
 	Schedule string `json:"schedule"`
 
+	// The time zone name for the given schedule, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones.
+	// If not specified, this will default to the time zone of the kube-controller-manager process.
+	// The set of valid time zone names and the time zone offset is loaded from the system-wide time zone
+	// database by the API server during CronJob validation and the controller manager during execution.
+	// If no system-wide time zone database can be found a bundled version of the database is used instead.
+	// If the time zone name becomes invalid during the lifetime of a CronJob or due to a change in host
+	// configuration, the controller will stop creating new Jobs and will create a system event with the
+	// reason UnknownTimeZone.
+	// More information can be found in https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#time-zones
+	// +optional
+	TimeZone *string `json:"timeZone,omitempty"`
+
 	// jobTemplate specifies the job that will be created when executing a CronJob.
 	// +required
 	JobTemplate batchv1.JobTemplateSpec `json:"jobTemplate"`

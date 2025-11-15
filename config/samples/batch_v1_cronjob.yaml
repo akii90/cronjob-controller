@@ -6,9 +6,10 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: cronjob-sample
 spec:
-  schedule: "*/1 * * * *"
+  schedule: "31 9 * * *"
   startingDeadlineSeconds: 60
   concurrencyPolicy: Forbid
+  timeZone: ETC/UTC
   jobTemplate:
     spec:
       template:
